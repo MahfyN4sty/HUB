@@ -1,0 +1,494 @@
+-- Multi-Feature HUB v2 - Working Features Only
+-- Paste ke executor dan jalankan
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Variables untuk tracking connections
+local connections = {
+    headsit = nil,
+    follow = nil,
+    orbit = nil,
+    spamjump = nil
+}
+
+local orbitAngle = 0
+local currentPage = "main"
+
+-- Utility Functions
+local function getRoot(char)
+    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+end
+
+local function findPlayer(name)
+    name = name:lower()
+    for _, v in pairs(Players:GetPlayers()) do
+        if v.Name:lower():sub(1, #name) == name or v.DisplayName:lower():sub(1, #name) == name then
+            return v
+        end
+    end
+    return nil
+end
+
+local function stopAll()
+    for _, conn in pairs(connections) do
+        if conn then conn:Disconnect() end
+    end
+    connections = {headsit = nil, follow = nil, orbit = nil, spamjump = nil}
+    
+    local hum = player.Character and player.Character:FindFirstChildOfClass('Humanoid')
+    if hum then hum.Sit = false end
+end
+
+-- Create GUI
+local sg = Instance.new("ScreenGui")
+sg.Name = "HUB_v2"
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.Parent = playerGui
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 340, 0, 420)
+main.Position = UDim2.new(0.5, -170, 0.5, -210)
+main.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.Parent = sg
+
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+
+-- Top Bar
+local top = Instance.new("Frame")
+top.Size = UDim2.new(1, 0, 0, 40)
+top.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+top.BorderSizePixel = 0
+top.Parent = main
+
+Instance.new("UICorner", top).CornerRadius = UDim.new(0, 12)
+
+local topFix = Instance.new("Frame")
+topFix.Size = UDim2.new(1, 0, 0, 12)
+topFix.Position = UDim2.new(0, 0, 1, -12)
+topFix.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+topFix.BorderSizePixel = 0
+topFix.Parent = top
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -80, 1, 0)
+title.Position = UDim2.new(0, 12, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "MULTI-FEATURE HUB"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextSize = 16
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = top
+
+local minimize = Instance.new("TextButton")
+minimize.Size = UDim2.new(0, 30, 0, 30)
+minimize.Position = UDim2.new(1, -68, 0, 5)
+minimize.BackgroundColor3 = Color3.fromRGB(255, 180, 0)
+minimize.Text = "-"
+minimize.TextColor3 = Color3.new(0, 0, 0)
+minimize.TextSize = 18
+minimize.Font = Enum.Font.GothamBold
+minimize.BorderSizePixel = 0
+minimize.Parent = top
+
+Instance.new("UICorner", minimize).CornerRadius = UDim.new(0, 6)
+
+local close = Instance.new("TextButton")
+close.Size = UDim2.new(0, 30, 0, 30)
+close.Position = UDim2.new(1, -33, 0, 5)
+close.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+close.Text = "×"
+close.TextColor3 = Color3.new(1, 1, 1)
+close.TextSize = 20
+close.Font = Enum.Font.GothamBold
+close.BorderSizePixel = 0
+close.Parent = top
+
+Instance.new("UICorner", close).CornerRadius = UDim.new(0, 6)
+
+-- Main Menu
+local mainMenu = Instance.new("ScrollingFrame")
+mainMenu.Size = UDim2.new(1, -20, 1, -60)
+mainMenu.Position = UDim2.new(0, 10, 0, 50)
+mainMenu.BackgroundTransparency = 1
+mainMenu.BorderSizePixel = 0
+mainMenu.ScrollBarThickness = 4
+mainMenu.CanvasSize = UDim2.new(0, 0, 0, 470)
+mainMenu.Parent = main
+
+local function createMenuButton(text, emoji, color, yPos)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 55)
+    btn.Position = UDim2.new(0, 0, 0, yPos)
+    btn.BackgroundColor3 = color
+    btn.Text = emoji .. " " .. text
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.TextSize = 15
+    btn.Font = Enum.Font.GothamBold
+    btn.BorderSizePixel = 0
+    btn.Parent = mainMenu
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    return btn
+end
+
+local btnFollow = createMenuButton("Follow Player", "🚶", Color3.fromRGB(80, 180, 120), 5)
+local btnHeadsit = createMenuButton("HeadSit", "🪑", Color3.fromRGB(60, 140, 200), 70)
+local btnOrbit = createMenuButton("Orbit Player", "🌀", Color3.fromRGB(180, 80, 180), 135)
+local btnView = createMenuButton("View Player", "👁️", Color3.fromRGB(140, 80, 180), 200)
+local btnTP = createMenuButton("Teleport to Player", "⚡", Color3.fromRGB(200, 140, 60), 265)
+local btnJump = createMenuButton("Spam Jump (Toggle)", "🦘", Color3.fromRGB(255, 130, 60), 330)
+local btnSpeed = createMenuButton("Speed Boost (Toggle)", "⚡", Color3.fromRGB(100, 200, 255), 395)
+
+-- Input Page Template
+local function createInputPage(parentFrame, pageTitle)
+    local page = Instance.new("Frame")
+    page.Size = UDim2.new(1, -20, 1, -60)
+    page.Position = UDim2.new(0, 10, 0, 50)
+    page.BackgroundTransparency = 1
+    page.Visible = false
+    page.Parent = parentFrame
+    
+    local back = Instance.new("TextButton")
+    back.Size = UDim2.new(0, 75, 0, 32)
+    back.BackgroundColor3 = Color3.fromRGB(55, 55, 65)
+    back.Text = "← Back"
+    back.TextColor3 = Color3.new(1, 1, 1)
+    back.TextSize = 13
+    back.Font = Enum.Font.GothamBold
+    back.BorderSizePixel = 0
+    back.Parent = page
+    Instance.new("UICorner", back).CornerRadius = UDim.new(0, 6)
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 0, 25)
+    lbl.Position = UDim2.new(0, 0, 0, 45)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "Target Player:"
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.TextSize = 14
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = page
+    
+    local input = Instance.new("TextBox")
+    input.Size = UDim2.new(1, 0, 0, 38)
+    input.Position = UDim2.new(0, 0, 0, 75)
+    input.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+    input.PlaceholderText = "Masukkan nama player..."
+    input.PlaceholderColor3 = Color3.fromRGB(110, 110, 110)
+    input.Text = ""
+    input.TextColor3 = Color3.new(1, 1, 1)
+    input.TextSize = 14
+    input.Font = Enum.Font.Gotham
+    input.BorderSizePixel = 0
+    input.ClearTextOnFocus = false
+    input.Parent = page
+    Instance.new("UICorner", input).CornerRadius = UDim.new(0, 6)
+    
+    local start = Instance.new("TextButton")
+    start.Size = UDim2.new(0.48, 0, 0, 38)
+    start.Position = UDim2.new(0, 0, 0, 125)
+    start.BackgroundColor3 = Color3.fromRGB(60, 180, 100)
+    start.Text = "Start"
+    start.TextColor3 = Color3.new(1, 1, 1)
+    start.TextSize = 14
+    start.Font = Enum.Font.GothamBold
+    start.BorderSizePixel = 0
+    start.Parent = page
+    Instance.new("UICorner", start).CornerRadius = UDim.new(0, 6)
+    
+    local stop = Instance.new("TextButton")
+    stop.Size = UDim2.new(0.48, 0, 0, 38)
+    stop.Position = UDim2.new(0.52, 0, 0, 125)
+    stop.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+    stop.Text = "Stop"
+    stop.TextColor3 = Color3.new(1, 1, 1)
+    stop.TextSize = 14
+    stop.Font = Enum.Font.GothamBold
+    stop.BorderSizePixel = 0
+    stop.Parent = page
+    Instance.new("UICorner", stop).CornerRadius = UDim.new(0, 6)
+    
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, 0, 0, 30)
+    status.Position = UDim2.new(0, 0, 0, 175)
+    status.BackgroundTransparency = 1
+    status.Text = ""
+    status.TextColor3 = Color3.fromRGB(100, 200, 100)
+    status.TextSize = 12
+    status.Font = Enum.Font.Gotham
+    status.Parent = page
+    
+    return {page = page, back = back, input = input, start = start, stop = stop, status = status}
+end
+
+-- Create Pages
+local pageFollow = createInputPage(main, "Follow")
+local pageHeadsit = createInputPage(main, "HeadSit")
+local pageOrbit = createInputPage(main, "Orbit")
+local pageView = createInputPage(main, "View")
+local pageTP = createInputPage(main, "Teleport")
+
+-- Mini Frame
+local mini = Instance.new("Frame")
+mini.Size = UDim2.new(0, 50, 0, 50)
+mini.Position = UDim2.new(0, 10, 0, 10)
+mini.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+mini.BorderSizePixel = 0
+mini.Visible = false
+mini.Active = true
+mini.Draggable = true
+mini.Parent = sg
+
+Instance.new("UICorner", mini).CornerRadius = UDim.new(0, 10)
+
+local miniText = Instance.new("TextLabel")
+miniText.Size = UDim2.new(1, 0, 1, 0)
+miniText.BackgroundTransparency = 1
+miniText.Text = "-"
+miniText.TextColor3 = Color3.new(1, 1, 1)
+miniText.TextSize = 28
+miniText.Font = Enum.Font.GothamBold
+miniText.Parent = mini
+
+-- Page Switching
+local function switchPage(page)
+    mainMenu.Visible = false
+    pageFollow.page.Visible = false
+    pageHeadsit.page.Visible = false
+    pageOrbit.page.Visible = false
+    pageView.page.Visible = false
+    pageTP.page.Visible = false
+    
+    if page == "main" then
+        title.Text = "MULTI-FEATURE HUB"
+        mainMenu.Visible = true
+    elseif page == "follow" then
+        title.Text = "Follow Player"
+        pageFollow.page.Visible = true
+    elseif page == "headsit" then
+        title.Text = "HeadSit"
+        pageHeadsit.page.Visible = true
+    elseif page == "orbit" then
+        title.Text = "Orbit Player"
+        pageOrbit.page.Visible = true
+    elseif page == "view" then
+        title.Text = "View Player"
+        pageView.page.Visible = true
+    elseif page == "tp" then
+        title.Text = "Teleport"
+        pageTP.page.Visible = true
+    end
+end
+
+-- Feature Functions
+local function startFollow(targetName)
+    if connections.follow then connections.follow:Disconnect() end
+    
+    local target = findPlayer(targetName)
+    if not target or not target.Character then
+        pageFollow.status.Text = "❌ Player tidak ditemukan!"
+        pageFollow.status.TextColor3 = Color3.fromRGB(255, 60, 60)
+        wait(2)
+        pageFollow.status.Text = ""
+        return
+    end
+    
+    connections.follow = RunService.RenderStepped:Connect(function()
+        if not target.Parent or not target.Character then
+            if connections.follow then connections.follow:Disconnect() end
+            return
+        end
+        
+        local tRoot = getRoot(target.Character)
+        local pRoot = getRoot(player.Character)
+        
+        if tRoot and pRoot then
+            pRoot.CFrame = CFrame.new(tRoot.Position + Vector3.new(0, 0, -3))
+        end
+    end)
+    
+    pageFollow.status.Text = "✅ Following: " .. target.Name
+    pageFollow.status.TextColor3 = Color3.fromRGB(100, 200, 100)
+end
+
+local function startHeadsit(targetName)
+    if connections.headsit then connections.headsit:Disconnect() end
+    
+    local target = findPlayer(targetName)
+    if not target or not target.Character then
+        pageHeadsit.status.Text = "❌ Player tidak ditemukan!"
+        pageHeadsit.status.TextColor3 = Color3.fromRGB(255, 60, 60)
+        wait(2)
+        pageHeadsit.status.Text = ""
+        return
+    end
+    
+    local hum = player.Character:FindFirstChildOfClass('Humanoid')
+    if hum then hum.Sit = true end
+    
+    connections.headsit = RunService.RenderStepped:Connect(function()
+        if not target.Parent or not target.Character then
+            if connections.headsit then connections.headsit:Disconnect() end
+            return
+        end
+        
+        local tRoot = getRoot(target.Character)
+        local pRoot = getRoot(player.Character)
+        local pHum = player.Character:FindFirstChildOfClass('Humanoid')
+        
+        if tRoot and pRoot and pHum and pHum.Sit then
+            pRoot.CFrame = tRoot.CFrame * CFrame.new(0, 1.6, 0.4)
+            pRoot.Velocity = Vector3.new(0, 0, 0)
+            pRoot.RotVelocity = Vector3.new(0, 0, 0)
+        end
+    end)
+    
+    pageHeadsit.status.Text = "✅ HeadSit: " .. target.Name
+    pageHeadsit.status.TextColor3 = Color3.fromRGB(100, 200, 100)
+end
+
+local function startOrbit(targetName)
+    if connections.orbit then connections.orbit:Disconnect() end
+    
+    local target = findPlayer(targetName)
+    if not target or not target.Character then
+        pageOrbit.status.Text = "❌ Player tidak ditemukan!"
+        pageOrbit.status.TextColor3 = Color3.fromRGB(255, 60, 60)
+        wait(2)
+        pageOrbit.status.Text = ""
+        return
+    end
+    
+    orbitAngle = 0
+    connections.orbit = RunService.RenderStepped:Connect(function()
+        if not target.Parent or not target.Character then
+            if connections.orbit then connections.orbit:Disconnect() end
+            return
+        end
+        
+        local tRoot = getRoot(target.Character)
+        local pRoot = getRoot(player.Character)
+        
+        if tRoot and pRoot then
+            orbitAngle = orbitAngle + 0.05
+            local x = math.cos(orbitAngle) * 5
+            local z = math.sin(orbitAngle) * 5
+            pRoot.CFrame = CFrame.new(tRoot.Position + Vector3.new(x, 0, z), tRoot.Position)
+        end
+    end)
+    
+    pageOrbit.status.Text = "✅ Orbiting: " .. target.Name
+    pageOrbit.status.TextColor3 = Color3.fromRGB(100, 200, 100)
+end
+
+local function viewPlayer(targetName)
+    local target = findPlayer(targetName)
+    if not target or not target.Character then
+        pageView.status.Text = "❌ Player tidak ditemukan!"
+        pageView.status.TextColor3 = Color3.fromRGB(255, 60, 60)
+        wait(2)
+        pageView.status.Text = ""
+        return
+    end
+    
+    Workspace.CurrentCamera.CameraSubject = target.Character:FindFirstChildOfClass('Humanoid')
+    pageView.status.Text = "✅ Viewing: " .. target.Name
+    pageView.status.TextColor3 = Color3.fromRGB(100, 200, 100)
+end
+
+local function teleportTo(targetName)
+    local target = findPlayer(targetName)
+    if not target or not target.Character then
+        pageTP.status.Text = "❌ Player tidak ditemukan!"
+        pageTP.status.TextColor3 = Color3.fromRGB(255, 60, 60)
+        wait(2)
+        pageTP.status.Text = ""
+        return
+    end
+    
+    local tRoot = getRoot(target.Character)
+    local pRoot = getRoot(player.Character)
+    
+    if tRoot and pRoot then
+        pRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, -3)
+        pageTP.status.Text = "✅ Teleported to: " .. target.Name
+        pageTP.status.TextColor3 = Color3.fromRGB(100, 200, 100)
+        wait(2)
+        pageTP.status.Text = ""
+    end
+end
+
+local jumpEnabled = false
+local speedEnabled = false
+local normalSpeed = 16
+
+-- Button Events
+btnFollow.MouseButton1Click:Connect(function() switchPage("follow") end)
+btnHeadsit.MouseButton1Click:Connect(function() switchPage("headsit") end)
+btnOrbit.MouseButton1Click:Connect(function() switchPage("orbit") end)
+btnView.MouseButton1Click:Connect(function() switchPage("view") end)
+btnTP.MouseButton1Click:Connect(function() switchPage("tp") end)
+
+btnJump.MouseButton1Click:Connect(function()
+    jumpEnabled = not jumpEnabled
+    if jumpEnabled then
+        btnJump.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+        connections.spamjump = RunService.RenderStepped:Connect(function()
+            local hum = player.Character and player.Character:FindFirstChildOfClass('Humanoid')
+            if hum then hum.Jump = true end
+        end)
+    else
+        btnJump.BackgroundColor3 = Color3.fromRGB(255, 130, 60)
+        if connections.spamjump then connections.spamjump:Disconnect() end
+    end
+end)
+
+btnSpeed.MouseButton1Click:Connect(function()
+    speedEnabled = not speedEnabled
+    local hum = player.Character and player.Character:FindFirstChildOfClass('Humanoid')
+    if hum then
+        if speedEnabled then
+            normalSpeed = hum.WalkSpeed
+            hum.WalkSpeed = normalSpeed * 2
+            btnSpeed.BackgroundColor3 = Color3.fromRGB(150, 255, 150)
+        else
+            hum.WalkSpeed = normalSpeed
+            btnSpeed.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+        end
+    end
+end)
+
+-- Page Events
+pageFollow.back.MouseButton1Click:Connect(function() if connections.follow then connections.follow:Disconnect() end switchPage("main") end)
+pageFollow.start.MouseButton1Click:Connect(function() if pageFollow.input.Text ~= "" then startFollow(pageFollow.input.Text) end end)
+pageFollow.stop.MouseButton1Click:Connect(function() if connections.follow then connections.follow:Disconnect() end pageFollow.status.Text = "" end)
+
+pageHeadsit.back.MouseButton1Click:Connect(function() stopAll() switchPage("main") end)
+pageHeadsit.start.MouseButton1Click:Connect(function() if pageHeadsit.input.Text ~= "" then startHeadsit(pageHeadsit.input.Text) end end)
+pageHeadsit.stop.MouseButton1Click:Connect(function() stopAll() pageHeadsit.status.Text = "" end)
+
+pageOrbit.back.MouseButton1Click:Connect(function() if connections.orbit then connections.orbit:Disconnect() end switchPage("main") end)
+pageOrbit.start.MouseButton1Click:Connect(function() if pageOrbit.input.Text ~= "" then startOrbit(pageOrbit.input.Text) end end)
+pageOrbit.stop.MouseButton1Click:Connect(function() if connections.orbit then connections.orbit:Disconnect() end pageOrbit.status.Text = "" end)
+
+pageView.back.MouseButton1Click:Connect(function() Workspace.CurrentCamera.CameraSubject = player.Character:FindFirstChildOfClass('Humanoid') switchPage("main") end)
+pageView.start.MouseButton1Click:Connect(function() if pageView.input.Text ~= "" then viewPlayer(pageView.input.Text) end end)
+pageView.stop.MouseButton1Click:Connect(function() Workspace.CurrentCamera.CameraSubject = player.Character:FindFirstChildOfClass('Humanoid') pageView.status.Text = "" end)
+
+pageTP.back.MouseButton1Click:Connect(function() switchPage("main") end)
+pageTP.start.MouseButton1Click:Connect(function() if pageTP.input.Text ~= "" then teleportTo(pageTP.input.Text) end end)
+
+-- Top Bar Events
+close.MouseButton1Click:Connect(function() stopAll() sg:Destroy() end)
+minimize.MouseButton1Click:Connect(function() main.Visible = false mini.Visible = true end)
+mini.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then mini.Visible = false main.Visible = true end end)
