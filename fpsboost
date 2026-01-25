@@ -1,0 +1,176 @@
+--// SERVICES
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local performanceActive = true
+
+------------------------------------------------
+-- OPTIMIZE OBJECT FUNCTION
+------------------------------------------------
+local function optimizeObject(obj)
+	if obj:IsA("BasePart") then
+		obj.Material = Enum.Material.Plastic
+		obj.Reflectance = 0
+		obj.CastShadow = false
+	elseif obj:IsA("Decal") or obj:IsA("Texture") then
+		pcall(function()
+			obj:Destroy()
+		end)
+	elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+		pcall(function()
+			obj:Destroy()
+		end)
+	end
+end
+
+------------------------------------------------
+-- APPLY TO ENTIRE MAP (ANTI LAG SPIKE)
+------------------------------------------------
+local function applyToMap()
+	local descendants = workspace:GetDescendants()
+	local batchSize = 100 -- Process 100 objects per frame
+	local index = 1
+	
+	local function processBatch()
+		local endIndex = math.min(index + batchSize - 1, #descendants)
+		
+		for i = index, endIndex do
+			optimizeObject(descendants[i])
+		end
+		
+		index = endIndex + 1
+		
+		if index <= #descendants then
+			RunService.Heartbeat:Wait()
+			processBatch()
+		end
+	end
+	
+	processBatch()
+	
+	local terrain = workspace:FindFirstChildOfClass("Terrain")
+	if terrain then
+		terrain.WaterWaveSize = 0
+		terrain.WaterWaveSpeed = 0
+		terrain.WaterReflectance = 0
+		terrain.WaterTransparency = 1
+	end
+end
+
+------------------------------------------------
+-- ENABLE PERFORMANCE MODE (AUTO)
+------------------------------------------------
+settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+
+Lighting.GlobalShadows = false
+Lighting.Brightness = 1
+Lighting.EnvironmentDiffuseScale = 0
+Lighting.EnvironmentSpecularScale = 0
+Lighting.FogEnd = 9e9
+
+-- Remove Sky and set gray background
+for _, v in pairs(Lighting:GetChildren()) do
+	if v:IsA("PostEffect") then
+		v.Enabled = false
+	elseif v:IsA("Sky") then
+		v:Destroy()
+	end
+end
+
+-- Set gray sky color
+Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+Lighting.FogColor = Color3.fromRGB(50, 50, 50)
+
+-- First application
+applyToMap()
+
+------------------------------------------------
+-- NEW OBJECTS
+------------------------------------------------
+workspace.DescendantAdded:Connect(function(obj)
+	task.wait()
+	optimizeObject(obj)
+end)
+
+------------------------------------------------
+-- REAPPLY EVERY 1 MINUTE
+------------------------------------------------
+task.spawn(function()
+	while true do
+		task.wait(60)
+		applyToMap()
+	end
+end)
+
+------------------------------------------------
+-- GUI FPS + PING (COM TOGGLE F3)
+------------------------------------------------
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "FPSCounter"
+gui.ResetOnSpawn = false
+
+local infoFrame = Instance.new("Frame", gui)
+infoFrame.Size = UDim2.new(0, 95, 0, 22)
+infoFrame.Position = UDim2.new(1, -100, 0, 10)
+infoFrame.BackgroundColor3 = Color3.new(0,0,0)
+infoFrame.BackgroundTransparency = 0.4
+infoFrame.BorderSizePixel = 0
+infoFrame.Visible = true
+
+local infoText = Instance.new("TextLabel", infoFrame)
+infoText.Size = UDim2.new(1,0,1,0)
+infoText.BackgroundTransparency = 1
+infoText.Font = Enum.Font.Gotham
+infoText.TextSize = 11
+infoText.TextColor3 = Color3.fromRGB(0,255,0)
+infoText.Text = "FPS: 0 | MS: 0"
+
+------------------------------------------------
+-- CALCULAR FPS + PING
+------------------------------------------------
+local frames = 0
+local lastTime = tick()
+
+RunService.RenderStepped:Connect(function()
+	frames += 1
+	if tick() - lastTime >= 1 then
+		local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+		infoText.Text = "FPS: "..frames.." | MS: "..ping
+		frames = 0
+		lastTime = tick()
+	end
+end)
+
+------------------------------------------------
+-- TOGGLE F3 (ON/OFF FPS COUNTER)
+------------------------------------------------
+local toggleDebounce = false
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	
+	if input.KeyCode == Enum.KeyCode.F3 then
+		if not toggleDebounce then
+			toggleDebounce = true
+			
+			infoFrame.Visible = not infoFrame.Visible
+			
+			if infoFrame.Visible then
+				print("✅ FPS Counter: ON")
+			else
+				print("❌ FPS Counter: OFF")
+			end
+			
+			task.wait(0.2)
+			toggleDebounce = false
+		end
+	end
+end)
+
+print("✅ FPS Booster aktif!")
+print("⌨️ Tekan F3 untuk ON/OFF FPS counter")
